@@ -79,7 +79,7 @@ def main():
     summaries = generate_summary(query, grouped_dict, model, tokenizer)
 
     # Step 8: Save raw timeline summary (trimmed to 20 sentences)
-    print(f"🔹 Writing trimmed summaries to {SUMMARY_FILE}...")
+    print(f" Writing trimmed summaries to {SUMMARY_FILE}...")
     with open(SUMMARY_FILE, "w", encoding="utf-8") as f:
         for date, text in sorted(summaries.items()):
             trimmed = trim_summary_sentences(text, max_sentences=20)
@@ -87,13 +87,13 @@ def main():
     print(f" Summary saved to {SUMMARY_FILE}")
 
     # Step 9: Format and save cleaned summary for evaluation
-    print("🔹 Preparing cleaned summary for Tilse evaluation...")
+    print("Preparing cleaned summary for Tilse evaluation...")
     cleaned_text = reformat_summaries_for_cleaning(summaries)
     write_text(cleaned_text, CLEANED_SUMMARY_FILE)
     print(f" Cleaned summary saved to {CLEANED_SUMMARY_FILE}")
 
     # Step 10: Evaluate using Tilse
-    print("🔹 Running ROUGE evaluation (Baseline 1)...")
+    print("Running ROUGE evaluation (Baseline 1)...")
     concat, align = evaluate_timeline(CLEANED_SUMMARY_FILE, GROUNDTRUTH_FILE)
     if concat and align:
         print(" ROUGE-1 Scores:")

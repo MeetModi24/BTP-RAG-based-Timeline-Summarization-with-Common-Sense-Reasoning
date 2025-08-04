@@ -1,5 +1,4 @@
 # data/__init__.py
-
 """
 Data module initializer for loading and preprocessing articles.
 
