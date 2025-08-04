@@ -1,0 +1,13 @@
+torch
+torchvision
+torchaudio
+sentence-transformers
+transformers
+faiss-cpu
+huggingface_hub
+bitsandbytes
+accelerate
+tilse
+pyrouge
+spacy
+python-dateutil
