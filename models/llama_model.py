@@ -5,21 +5,15 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from config import LLAMA_MODEL_NAME, HF_TOKEN
 from transformers.integrations import sdpa_attention
 
-# ------------------ FORCE FALLBACK ATTENTION ------------------
+# ------------------ DISABLE FLASH ATTENTION ------------------
+# This forces transformers to avoid FlashAttention on any GPU
 sdpa_attention.USE_FLASH_ATTENTION = False
-
-# Patch PyTorch scaled_dot_product_attention to avoid FlashAttention
-def sdpa_fallback(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False):
-    return torch.nn.functional._scaled_dot_product_attention(
-        q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal
-    )
-torch.nn.functional.scaled_dot_product_attention = sdpa_fallback
-# ---------------------------------------------------------------
+# -------------------------------------------------------------
 
 def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=hf_token)
 
-    # Load FP16 model (no 4-bit / BitsAndBytes)
+    # Load FP16 model for memory efficiency
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
@@ -27,7 +21,7 @@ def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
         use_auth_token=hf_token
     )
 
-    # Disable FlashAttention / xformers if present
+    # Explicitly disable flash attention / xformers if available
     if hasattr(model, "enable_flash_attention"):
         model.enable_flash_attention(False)
     if hasattr(model, "enable_xformers_memory_efficient_attention"):
@@ -59,6 +53,7 @@ def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=1
             max_length=max_input_tokens
         ).to(model.device)
 
+        # Remove unsupported flags like 'temperature' if needed
         outputs = model.generate(
             **inputs,
             max_new_tokens=max_summary_tokens,
