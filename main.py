@@ -135,7 +135,7 @@ def main():
     # Baseline 4: TimeLLaMA-based ordering
     # ================================
     print("\nRunning Baseline 4 (TimeLLaMA ordering)...")
-    b4_concat, b4_align = run_baseline4("baseline_3_dated_sentences.txt", GROUNDTRUTH_FILE)
+    b4_concat, b4_align = run_baseline4("baseline3_dated_sentences.txt", GROUNDTRUTH_FILE)
     if b4_concat and b4_align:
         print("Baseline 4 ROUGE-1 (concat):", b4_concat)
         print("Baseline 4 ROUGE-1 (align):", b4_align)
