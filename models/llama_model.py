@@ -1,18 +1,25 @@
 # models/llama_model.py
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from config import LLAMA_MODEL_NAME, HF_TOKEN
 from transformers.integrations import sdpa_attention
 
-# Force SDPA to NOT use FlashAttention
+# ------------------ FORCE FALLBACK ATTENTION ------------------
 sdpa_attention.USE_FLASH_ATTENTION = False
 
+# Patch PyTorch scaled_dot_product_attention to avoid FlashAttention
+def sdpa_fallback(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False):
+    return torch.nn.functional._scaled_dot_product_attention(
+        q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal
+    )
+torch.nn.functional.scaled_dot_product_attention = sdpa_fallback
+# ---------------------------------------------------------------
 
 def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=hf_token)
 
-    # Load FP16 model instead of 4-bit
+    # Load FP16 model (no 4-bit / BitsAndBytes)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
@@ -20,7 +27,7 @@ def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
         use_auth_token=hf_token
     )
 
-    # Disable flash attention / xformers if present
+    # Disable FlashAttention / xformers if present
     if hasattr(model, "enable_flash_attention"):
         model.enable_flash_attention(False)
     if hasattr(model, "enable_xformers_memory_efficient_attention"):
@@ -45,7 +52,12 @@ def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=1
         )
 
         max_input_tokens = 8192 - max_summary_tokens - 50
-        inputs = tokenizer(input_text, return_tensors="pt", truncation=True, max_length=max_input_tokens).to(model.device)
+        inputs = tokenizer(
+            input_text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_input_tokens
+        ).to(model.device)
 
         outputs = model.generate(
             **inputs,
