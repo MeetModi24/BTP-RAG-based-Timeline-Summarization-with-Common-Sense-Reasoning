@@ -1,6 +1,7 @@
 # config.py
+import os
 
-HF_TOKEN = "your_hf_token"
+HF_TOKEN = os.getenv("HF_TOKEN")
 LLAMA_MODEL_NAME = "meta-llama/Meta-Llama-3-8B-Instruct"
 RETRIEVER_MODEL_NAME = "multi-qa-MiniLM-L6-cos-v1"
 
