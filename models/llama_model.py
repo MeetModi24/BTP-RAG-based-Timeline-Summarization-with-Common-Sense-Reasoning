@@ -3,17 +3,20 @@
 # --- Set env vars BEFORE importing torch/transformers ---
 import os
 
-# Silence tokenizer fork/parallelism warnings and avoid deadlocks
+# Safer tokenizer behavior in forked environments
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-# Completely disable SDPA / FlashAttention backends
+# Kill SDPA/FlashAttention everywhere
 os.environ.setdefault("PYTORCH_USE_SDPA", "0")
 os.environ.setdefault("PYTORCH_FLASH_ATTENTION", "0")
 
-# Help with CUDA memory fragmentation on small GPUs
+# More informative CUDA errors (sync kernels)
+os.environ.setdefault("CUDA_LAUNCH_BLOCKING", "1")
+
+# Reduce CUDA fragmentation on small VRAM
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-# Optional: reduce HF noise
+# Optional: quieter transformers logs
 os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
 
 import torch
@@ -26,45 +29,59 @@ from transformers import (
 from config import LLAMA_MODEL_NAME, HF_TOKEN
 
 
+def _build_max_memory(default_gpu_gb: int = 3, cpu_gb: int = 120):
+    """
+    Constrain per-GPU memory so accelerate doesn't spill layers onto an almost-full device.
+    You can override with env MAX_GPU_MEM_GB / MAX_CPU_MEM_GB.
+    """
+    gpu_gb = int(os.environ.get("MAX_GPU_MEM_GB", default_gpu_gb))
+    cpu_limit = int(os.environ.get("MAX_CPU_MEM_GB", cpu_gb))
+    max_mem = {"cpu": f"{cpu_limit}GiB"}
+    if torch.cuda.is_available():
+        for i in range(torch.cuda.device_count()):
+            max_mem[i] = f"{gpu_gb}GiB"
+    return max_mem
+
+
 def load_llama_model(model_name: str = LLAMA_MODEL_NAME, hf_token: str = HF_TOKEN):
     """
-    Loads a Llama 3 (or compatible) model in 4-bit quantization with attention forced to 'eager'
-    so that FlashAttention/SDPA/xFormers are never used.
+    Load Llama 3 (or compatible) in 4-bit with eager attention, constrained GPU memory,
+    and CPU/disk offload for stability on small/contended GPUs.
     """
 
-    # Force eager attention (Transformers >= 4.38)
+    # Force eager attention (disables SDPA/Flash/xformers)
     config = AutoConfig.from_pretrained(model_name, use_auth_token=hf_token)
-    # Valid values include "eager", "sdpa", "flash_attention_2" (if available).
     config._attn_implementation = "eager"
 
-    # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=hf_token)
-    # Ensure pad token exists (some Llama tokenizers don't define it)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    # Left padding is safer for decoder-only models at generation time
     tokenizer.padding_side = "left"
 
-    # 4-bit quantization config (bnb)
+    # Prefer BF16 compute on A100 for bnb 4-bit stability
+    compute_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float16
+
     quant_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,  # compute in fp16 for speed/memory balance
+        bnb_4bit_compute_dtype=compute_dtype,
     )
 
-    # Load the model with 4-bit quantization and device_map auto
-    # offload_folder allows CPU/disk offload if GPU VRAM is tiny
+    max_memory = _build_max_memory(default_gpu_gb=3, cpu_gb=120)
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         config=config,
         quantization_config=quant_config,
-        device_map="auto",
-        offload_folder="offload",
+        device_map="auto",          # accelerate chooses placement within max_memory limits
+        max_memory=max_memory,      # <--- prevent spilling onto nearly-full GPUs
+        offload_folder="offload",   # CPU/disk offload when VRAM is tight
         use_auth_token=hf_token,
     )
+    model.eval()
 
-    # Align pad/eos ids for generation
+    # Make sure pad/eos ids are set
     if getattr(model.config, "pad_token_id", None) is None:
         model.config.pad_token_id = tokenizer.pad_token_id
     if getattr(model.generation_config, "pad_token_id", None) is None:
@@ -72,7 +89,7 @@ def load_llama_model(model_name: str = LLAMA_MODEL_NAME, hf_token: str = HF_TOKE
     if getattr(model.config, "eos_token_id", None) is None:
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    # Best-effort: ensure any optional fast paths are disabled if present
+    # Best-effort disable any optional fast paths if present
     if hasattr(model, "enable_flash_attention"):
         model.enable_flash_attention(False)
     if hasattr(model, "enable_xformers_memory_efficient_attention"):
@@ -87,17 +104,22 @@ def generate_summary(
     model,
     tokenizer,
     max_summary_tokens: int = 128,
-    # Keep context manageable for low VRAM; adjust if you have more memory
-    max_context_tokens: int = 2048,
+    max_context_tokens: int = 1024,  # keep modest for low VRAM; increase if you have room
 ):
     """
-    Generates per-date summaries. Uses deterministic (greedy) decoding to avoid
-    temperature/top-p warnings. Keeps context modest for small GPUs.
+    Deterministic generation (greedy) with conservative context length.
     """
     summaries = {}
 
     # Safety margin for special tokens
-    max_input_tokens = max(256, min(max_context_tokens, 8192 - max_summary_tokens - 50))
+    max_input_tokens = max(256, min(max_context_tokens, 4096 - max_summary_tokens - 64))
+
+    # Free any stale caches before a long loop (helps on shared GPUs)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+
+    device = next(model.parameters()).device
 
     for pub_date, contents in grouped_docs.items():
         full_content = " ".join(contents)
@@ -118,33 +140,33 @@ def generate_summary(
             max_length=max_input_tokens,
             padding=True,
         )
-
-        # Send tensors to the same device as the model's first param
-        device = next(model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        # Deterministic decoding; don't pass unsupported flags like temperature when do_sample=False
+        # Greedy decoding; avoid unsupported sampling flags
         with torch.inference_mode():
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=max_summary_tokens,
-                do_sample=False,      # greedy
-                top_p=1.0,            # no-op with do_sample=False
+                do_sample=False,
+                top_p=1.0,
+                use_cache=False,  # a bit more VRAM-friendly on small GPUs
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
 
         text = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        # Optionally trim echo of the prompt if model echoes it (common with some configs)
-        # Try to split on the last occurrence of Content: to keep only the completion part
+        # Trim prompt echo if present
         split_key = "Content:"
         if split_key in text:
-            # Keep the part after your prompt if the model echoed
             after = text.split(split_key, maxsplit=1)[-1]
             if "\n" in after:
                 text = after.split("\n", maxsplit=1)[-1].strip()
 
         summaries[pub_date] = text
+
+        # Optional: clear per-iteration cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     return summaries
