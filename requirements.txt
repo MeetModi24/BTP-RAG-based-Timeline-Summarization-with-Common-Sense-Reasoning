@@ -11,3 +11,4 @@ tilse
 pyrouge
 spacy
 python-dateutil
+numpy
