@@ -4,6 +4,12 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from config import LLAMA_MODEL_NAME, HF_TOKEN
 from transformers.integrations import sdpa_attention
+import os
+
+
+os.environ["PYTORCH_USE_SDPA"] = "0"
+os.environ["PYTORCH_FLASH_ATTENTION"] = "0"
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 # ------------------ DISABLE FLASH ATTENTION ------------------
 # This forces transformers to avoid FlashAttention on any GPU
@@ -11,6 +17,7 @@ sdpa_attention.USE_FLASH_ATTENTION = False
 # -------------------------------------------------------------
 
 def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
+    
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=hf_token)
 
     # Load FP16 model for memory efficiency
