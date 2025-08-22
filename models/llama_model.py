@@ -12,31 +12,22 @@ sdpa_attention.USE_FLASH_ATTENTION = False
 def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=hf_token)
 
-    quant_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4"
-    )
-
+    # Load FP16 model instead of 4-bit
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        quantization_config=quant_config,
         device_map="auto",
+        torch_dtype=torch.float16,
         use_auth_token=hf_token
     )
 
-    # ------------------ DISABLE FLASH ATTENTION ------------------
+    # Disable flash attention / xformers if present
     if hasattr(model, "enable_flash_attention"):
         model.enable_flash_attention(False)
-
-    # Optional: also disable xformers memory-efficient attention if present
     if hasattr(model, "enable_xformers_memory_efficient_attention"):
         model.enable_xformers_memory_efficient_attention(False)
-    # -------------------------------------------------------------
-
 
     return model, tokenizer
+
 
 def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=128):
     summaries = {}
