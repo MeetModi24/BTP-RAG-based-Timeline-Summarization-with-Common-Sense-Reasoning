@@ -24,5 +24,3 @@ from .llama_model import (
     generate_summary,
 )
 
-# Optional: if timo_model.py is added
-# from .timo_model import run_timo_syria

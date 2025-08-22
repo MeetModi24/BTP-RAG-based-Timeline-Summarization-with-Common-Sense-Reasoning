@@ -4,21 +4,26 @@
 Entry point for the timeline summarization project.
 
 This script:
-1. Loads articles
+1. Loads articles (passed at runtime)
 2. Retrieves relevant documents using sentence-transformer + FAISS
 3. Processes and groups documents by publication date
 4. Loads LLaMA model and generates timeline summaries
 5. Writes summary output to file
-6. Runs all four baselines (Tilse, regex, spaCy, TimeLLaMA)
+6. Runs all four baselines (Tilse, Regex, spaCy, TimeLLaMA)
 7. Evaluates generated and baseline summaries using Tilse (ROUGE)
+
+Usage:
+    python main.py --articles data/ukraine_articles.jsonl --groundtruth data/ukraine_timelines.jsonl --query "Ukraine war"
 """
 
+import argparse
+
 from config import (
-    ARTICLE_FILE,
+    ARTICLE_FILE as DEFAULT_ARTICLE_FILE,
+    GROUNDTRUTH_FILE as DEFAULT_GROUNDTRUTH_FILE,
     PROCESSED_RESULTS_FILE,
     SUMMARY_FILE,
     CLEANED_SUMMARY_FILE,
-    GROUNDTRUTH_FILE,
 )
 
 from data import (
@@ -44,26 +49,44 @@ from utils import write_text
 
 # Baseline evaluation modules
 from evaluation import (
-    evaluate_timeline,             # Baseline 1 (Tilse)
-    run_baseline2,                 # Baseline 2 (Regex-based)
-    run_baseline3,                 # Baseline 3 (spaCy-based)
-    run_baseline4                  # Baseline 4 (TimeLLaMA ordering)
+    evaluate_timeline,   # Baseline 1
+    run_baseline2,       # Baseline 2
+    run_baseline3,       # Baseline 3
+    run_baseline4        # Baseline 4
 )
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Timeline Summarization Pipeline")
+    parser.add_argument("--articles", type=str, default=DEFAULT_ARTICLE_FILE,
+                        help="Path to JSONL file containing input articles (default: config.py setting)")
+    parser.add_argument("--groundtruth", type=str, default=DEFAULT_GROUNDTRUTH_FILE,
+                        help="Path to groundtruth timelines JSONL (default: config.py setting)")
+    parser.add_argument("--query", type=str, required=True,
+                        help="Query string for retrieval (e.g. 'Syrian uprising')")
+    return parser.parse_args()
 
 
 def main():
+    args = parse_args()
+    ARTICLE_FILE = args.articles
+    GROUNDTRUTH_FILE = args.groundtruth
+    query = args.query
+
+    print(f"Using ARTICLE_FILE = {ARTICLE_FILE}")
+    print(f"Using GROUNDTRUTH_FILE = {GROUNDTRUTH_FILE}")
+    print(f"Query = '{query}'")
+
     # Step 1: Load articles
     print("Loading articles...")
     articles = load_articles(ARTICLE_FILE)
-    print(f"Loaded {len(articles)} articles.")
+    print(f"Loaded {len(articles)} articles from {ARTICLE_FILE}")
 
     # Step 2: Load retriever and create FAISS index
     print("Initializing retriever and FAISS index...")
     retriever = load_retriever()
     index, _ = build_faiss_index(articles, retriever)
 
-    # Step 3: Retrieve documents for a query
-    query = "Syrian uprising"
+    # Step 3: Retrieve documents for query
     print(f"Retrieving top documents for query: '{query}'")
     retrieved_docs = retrieve_documents(query, retriever, index, articles)
 
@@ -124,7 +147,8 @@ def main():
     # Baseline 3: spaCy-based
     # ================================
     print("\nRunning Baseline 3 (spaCy-based)...")
-    b3_concat, b3_align = run_baseline3(PROCESSED_RESULTS_FILE, GROUNDTRUTH_FILE)
+    b3_concat, b3_align = run_baseline3(PROCESSED_RESULTS_FILE, GROUNDTRUTH_FILE,
+                                        dated_sentences_out="baseline3_dated_sentences.txt")
     if b3_concat and b3_align:
         print("Baseline 3 ROUGE-1 (concat):", b3_concat)
         print("Baseline 3 ROUGE-1 (align):", b3_align)
