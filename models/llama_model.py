@@ -21,6 +21,16 @@ def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
         use_auth_token=hf_token
     )
 
+    # ------------------ DISABLE FLASH ATTENTION ------------------
+    if hasattr(model, "enable_flash_attention"):
+        model.enable_flash_attention(False)
+
+    # Optional: also disable xformers memory-efficient attention if present
+    if hasattr(model, "enable_xformers_memory_efficient_attention"):
+        model.enable_xformers_memory_efficient_attention(False)
+    # -------------------------------------------------------------
+
+
     return model, tokenizer
 
 def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=128):
