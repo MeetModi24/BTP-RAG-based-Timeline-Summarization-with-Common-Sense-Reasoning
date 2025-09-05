@@ -60,6 +60,8 @@ from evaluation import (
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+import re # Make sure to import the 're' module at the top of main.py
+
 def generate_expanded_queries(topic_query, model, tokenizer, num_questions=5):
     """
     Uses an LLM to expand a simple topic query into a list of detailed questions.
@@ -78,25 +80,35 @@ def generate_expanded_queries(topic_query, model, tokenizer, num_questions=5):
     ["Question 1?", "Question 2?", "Question 3?"]
     """
 
-    # This is a simplified generation call, adjust parameters as needed
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(**inputs, max_new_tokens=512, num_return_sequences=1)
+    
+    # Using stricter generation parameters
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=512,
+        do_sample=False,
+        temperature=0.1,
+        num_return_sequences=1
+    )
     
     response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
     
-    # Extract the list from the model's response
+    # NEW, MORE ROBUST PARSING LOGIC
     try:
-        # A simple way to find and evaluate the list in the response string
-        list_str = response_text[response_text.find('['):response_text.rfind(']')+1]
-        expanded_queries = eval(list_str)
-        if isinstance(expanded_queries, list):
-            return expanded_queries
-    except:
-        # Fallback if parsing fails
-        print("Warning: Failed to parse LLM response for query expansion.")
-        return [topic_query] # Return the original query as a fallback
-
-    return [topic_query]
+        # Use regex to find all strings enclosed in double quotes
+        # This is much safer than using eval()
+        questions = re.findall(r'"(.*?)"', response_text)
+        
+        if questions:
+            return questions
+        else:
+            # Fallback if no questions are found
+            print("Warning: Regex failed to find any questions in the LLM response.")
+            return [topic_query]
+            
+    except Exception as e:
+        print(f"An error occurred during query expansion parsing: {e}")
+        return [topic_query]
 
 # def parse_args():
 #     parser = argparse.ArgumentParser(description="Timeline Summarization Pipeline")
