@@ -1,0 +1,16 @@
+# requirements.txt
+torch
+torchvision
+torchaudio
+sentence-transformers
+transformers
+faiss-cpu
+huggingface_hub
+bitsandbytes
+accelerate
+tilse
+spacy
+python-dateutil
+numpy
+sentencepiece
+tqdm
