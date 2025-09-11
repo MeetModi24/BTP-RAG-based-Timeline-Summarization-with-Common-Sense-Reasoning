@@ -314,7 +314,7 @@ def main():
 
     # Step 9: Format and save cleaned summary for evaluation
     print("Preparing cleaned summary for Tilse evaluation...")
-    cleaned_text = reformat_summaries_for_cleaning(summaries)
+    cleaned_text = reformat_summaries_for_cleaning(valid_summaries)
     write_text(cleaned_text, CLEANED_SUMMARY_FILE)
     print(f"Cleaned summary saved to {CLEANED_SUMMARY_FILE}")
 
