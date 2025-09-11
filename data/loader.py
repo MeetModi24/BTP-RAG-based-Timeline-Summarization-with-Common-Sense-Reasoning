@@ -47,7 +47,7 @@ def process_retrieved_docs(retrieved_docs):
 def write_processed_results_to_file(processed_results, output_file="processed_results.txt"):
     with open(output_file, "w", encoding="utf-8") as f:
         for doc in processed_results:
-            date_str = doc.get("Date", "").strip()
+            date_str = (doc.get("Date") or "").strip()
             content = doc.get("Content", "").strip()
             if not content:
                 continue
