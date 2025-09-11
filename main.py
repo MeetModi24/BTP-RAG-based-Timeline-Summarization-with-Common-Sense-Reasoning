@@ -304,8 +304,10 @@ def main():
 
     # Step 8: Save raw timeline summary
     print(f"Writing trimmed summaries to {SUMMARY_FILE}...")
+    valid_summaries = {k: v for k, v in summaries.items() if k is not None}
+
     with open(SUMMARY_FILE, "w", encoding="utf-8") as f:
-        for date, text in sorted(summaries.items()):
+        for date, text in sorted(valid_summaries.items()):
             trimmed = trim_summary_sentences(text, max_sentences=20)
             f.write(f"{date}: {trimmed}\n")
     print(f"Summary saved to {SUMMARY_FILE}")
