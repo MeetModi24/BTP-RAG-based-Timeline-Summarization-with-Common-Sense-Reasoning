@@ -13,3 +13,9 @@ spacy
 python-dateutil
 numpy
 sentencepiece
+pandas
+spacy
+python-dateutil
+numpy
+sentencepiece
+tqdm
