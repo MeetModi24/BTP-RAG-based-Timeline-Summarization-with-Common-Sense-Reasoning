@@ -56,18 +56,28 @@ def parse_groundtruth_file(groundtruth_file):
     """
     groundtruth_timelines = []
     with open(groundtruth_file, "r", encoding="utf-8") as f:
-        for line in f:
-            timeline = json.loads(line)
+        for line_no, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:   # skip blank lines
+                print(f"Skipping empty line {line_no}")
+                continue
+            try:
+                timeline = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON parse error on line {line_no}: {e}")
+                continue
+
             groundtruth_dict = {}
             for entry in timeline:
                 try:
                     date_obj = parse(entry[0]).date()
                     groundtruth_dict[date_obj] = entry[1]
                 except Exception as e:
-                    print(f"Error parsing GT date: {entry[0]} → {e}")
+                    print(f"Error parsing GT date at line {line_no}: {entry[0]} → {e}")
             groundtruth_timelines.append(timelines.Timeline(groundtruth_dict))
 
     return timelines.GroundTruth(groundtruth_timelines)
+
 
 
 def evaluate_timeline(predicted_file, groundtruth_file):
