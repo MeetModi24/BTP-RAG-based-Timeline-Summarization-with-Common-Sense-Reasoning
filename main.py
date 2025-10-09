@@ -110,6 +110,8 @@ def generate_expanded_queries(topic_query, model, tokenizer, num_questions=5):
         print(f"An error occurred during query expansion parsing: {e}")
         return [topic_query]
 
+#----------------THIS IS NORMAL PART----------------------------
+
 # def parse_args():
 #     parser = argparse.ArgumentParser(description="Timeline Summarization Pipeline")
 #     parser.add_argument("--articles", type=str, default=DEFAULT_ARTICLE_FILE,
@@ -119,17 +121,6 @@ def generate_expanded_queries(topic_query, model, tokenizer, num_questions=5):
 #     parser.add_argument("--query", type=str, required=True,
 #                         help="Query string for retrieval (e.g. 'Syrian uprising')")
 #     return parser.parse_args()
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Timeline Summarization Pipeline")
-    parser.add_argument("--articles", type=str, default=DEFAULT_ARTICLE_FILE,
-                        help="Path to JSONL file containing input articles (default: config.py setting)")
-    parser.add_argument("--groundtruth", type=str, default=DEFAULT_GROUNDTRUTH_FILE,
-                        help="Path to groundtruth timelines JSONL (default: config.py setting)")
-    # This is the crucial part that needs to be correct
-    parser.add_argument("--query", nargs='+', required=True,
-                        help="One or more query terms for retrieval (e.g. h1n1 swine flu)")
-    return parser.parse_args()
 
 # def main():
 #     args = parse_args()
@@ -233,6 +224,18 @@ def parse_args():
 
 #     print("\nAll baselines completed.")
 
+#-----------------------------ITERATIVE PART BELOW------------------------
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Timeline Summarization Pipeline")
+    parser.add_argument("--articles", type=str, default=DEFAULT_ARTICLE_FILE,
+                        help="Path to JSONL file containing input articles (default: config.py setting)")
+    parser.add_argument("--groundtruth", type=str, default=DEFAULT_GROUNDTRUTH_FILE,
+                        help="Path to groundtruth timelines JSONL (default: config.py setting)")
+    # This is the crucial part that needs to be correct
+    parser.add_argument("--query", nargs='+', required=True,
+                        help="One or more query terms for retrieval (e.g. h1n1 swine flu)")
+    return parser.parse_args()
 
 def main():
     args = parse_args()
