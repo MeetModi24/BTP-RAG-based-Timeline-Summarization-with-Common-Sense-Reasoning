@@ -10,7 +10,6 @@ Document preprocessing and formatting utilities:
 import re
 from collections import defaultdict
 
-
 def list_to_grouped_dict(processed_results):
     """
     Convert processed result list (with Date/Content) to a dict:
@@ -25,7 +24,7 @@ def list_to_grouped_dict(processed_results):
     return grouped
 
 
-def trim_summary_sentences(summary_text, max_sentences=20):
+def trim_summary_sentences(summary_text, max_sentences=30):
     """
     Limit a long summary to the first N sentences.
     """

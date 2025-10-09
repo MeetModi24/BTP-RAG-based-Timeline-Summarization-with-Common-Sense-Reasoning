@@ -50,7 +50,7 @@ def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
 
     return model, tokenizer
 
-def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=128):
+def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=1024):
     summaries = {}
 
     for pub_date, contents in grouped_docs.items():
@@ -60,7 +60,7 @@ def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=1
             f"Query: {query}\n\n"
             f"Publication Date: {pub_date}\n\n"
             f"Content: {full_content}\n\n"
-            "Your task is to generate a summary consisting of up to 20 sentences, "
+            "Your task is to generate a summary consisting of up to 30 sentences, "
             "strictly using only the information present in the content above for the given publication date and the query. "
             "Each sentence that mentions a date must begin with the date in YYYY-MM-DD format, followed by a colon and a space."
         )
