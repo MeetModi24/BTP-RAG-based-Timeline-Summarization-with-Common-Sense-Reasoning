@@ -161,9 +161,6 @@ def main():
     write_processed_results_to_file(grouped_results, output_file=PROCESSED_RESULTS_FILE)
     print(f"Processed results saved to {PROCESSED_RESULTS_FILE}")
 
-    #--------extras for debugging 1--------
-    print(grouped_results)
-
     # Step 5: Convert grouped results to format for LLaMA
     grouped_dict = list_to_grouped_dict(grouped_results)
 
@@ -204,7 +201,7 @@ def main():
     # Baseline 2: Regex-based
     # ================================
     print("\nRunning Baseline 2 (Regex-based)...")
-    b2_concat, b2_align = run_baseline2(PROCESSED_RESULTS_FILE, GROUNDTRUTH_FILE)
+    b2_concat, b2_align = run_baseline2(SUMMARY_FILE, GROUNDTRUTH_FILE)
     if b2_concat and b2_align:
         print("Baseline 2 ROUGE-1 (concat):", b2_concat)
         print("Baseline 2 ROUGE-1 (align):", b2_align)

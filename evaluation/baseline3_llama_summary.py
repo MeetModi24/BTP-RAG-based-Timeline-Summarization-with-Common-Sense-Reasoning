@@ -43,10 +43,8 @@ def extract_dates_with_full_mapping(input_file, output_file):
         sentences = spacy_sent_tokenize(summary)
 
         mappings = []
-        # Grouping state for merging sentences that follow an explicitly dated sentence
-        in_group = False
-        group_date = None
-        group_sentences = []
+        # Track the most recent explicitly detected date to inherit for succeeding sentences
+        last_explicit_date = None
 
         for sent in sentences:
             final_date = None
@@ -120,26 +118,15 @@ def extract_dates_with_full_mapping(input_file, output_file):
                             final_date = inferred.strftime("%Y-%m-%d")
                             explicit_date_found = True
 
-            # Apply grouping/merging rules
+            # Assign dates per sentence without merging
             if explicit_date_found and final_date:
-                # Flush previous group if any
-                if in_group and group_sentences:
-                    mappings.append((group_date, ' '.join(s.strip() for s in group_sentences)))
-                # Start a new group with this explicitly dated sentence
-                in_group = True
-                group_date = final_date
-                group_sentences = [sent.strip()]
+                last_explicit_date = final_date
+                mappings.append((final_date, sent.strip()))
             else:
-                if in_group:
-                    # Continue the current group by appending this undated sentence
-                    group_sentences.append(sent.strip())
+                if last_explicit_date:
+                    mappings.append((last_explicit_date, sent.strip()))
                 else:
-                    # Standalone sentence without explicit date: assign publication date, do NOT merge
                     mappings.append((pub_date_obj.strftime("%Y-%m-%d"), sent.strip()))
-
-        # Flush any remaining open group at the end of the block
-        if in_group and group_sentences:
-            mappings.append((group_date, ' '.join(s.strip() for s in group_sentences)))
 
         # Build block output
         header = f"Publication Date: {pub_date_obj.strftime('%a %b %d , %Y')}"

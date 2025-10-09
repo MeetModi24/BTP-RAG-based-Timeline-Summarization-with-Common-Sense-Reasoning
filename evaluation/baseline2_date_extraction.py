@@ -12,25 +12,61 @@ import tilse.evaluation.rouge as rouge
 
 # --- Helper regex and splitters ---
 def get_publication_year(text):
+    """Extract publication year from header lines.
+    Supports formats like:
+      - "Publication Date: Wed Jul 18 , 2012" / "Jul 18, 2012"
+      - "Publication Date: 2012-07-18T00:00:00+00:00"
+    Returns int year or None.
+    """
+    # ISO-8601 in header
+    iso_re = re.compile(r"Publication\s*Date:\s*(\d{4})-\d{2}-\d{2}T")
+    m = iso_re.search(text)
+    if m:
+        return int(m.group(1))
+
+    # Month Day, Year
     full_date_re = re.compile(
         r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
         r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-        r"\s\d{1,2},\s(\d{4})"
+        r"\s\d{1,2},\s(\d{4})",
+        re.IGNORECASE,
     )
     m = full_date_re.search(text)
     if m:
         return int(m.group(1))
+
+    # Fallback: any 4-digit year following Publication Date label
+    loose_re = re.compile(r"Publication\s*Date:\s*.*?(\d{4})")
+    m = loose_re.search(text)
+    if m:
+        return int(m.group(1))
+
     return None
 
 
 BROAD_DATE_RE = re.compile(
-    r"\b("
+    r"\b("  # capture whole matched date span
+    r"(?:"  # Month-first: Apr 22, 2011 | Apr 22 | Apr 22/23"
     r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
     r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+"
-    r"\d{1,2}(?:/\d{1,2})?"
+    r"\d{1,2}(?:st|nd|rd|th)?(?:/[0-9]{1,2}(?:st|nd|rd|th)?)?"
     r"(?:,\s*\d{4})?"
-    r")\b"
+    r")"
+    r"|"  # or Day-first: 22 Apr 2011 | 22 Apr | 22/23 Apr
+    r"(?:\d{1,2}(?:st|nd|rd|th)?(?:/[0-9]{1,2}(?:st|nd|rd|th)?)?\s+"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
+    r"(?:,\s*\d{4})?"  # optional year with comma
+    r"))\b",
+    re.IGNORECASE,
 )
+
+# Helpers to parse month-first and day-first without year
+MONTH_DAY_RE = re.compile(r"^(?P<month>[A-Za-z]+)\.?\s+(?P<day>\d{1,2}(?:st|nd|rd|th)?(?:/\d{1,2}(?:st|nd|rd|th)?)?)")
+DAY_MONTH_RE = re.compile(r"^(?P<day>\d{1,2}(?:st|nd|rd|th)?(?:/\d{1,2}(?:st|nd|rd|th)?)?)\s+(?P<month>[A-Za-z]+)\.?$")
+
+# Year detection in free text
+YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
 SENT_SPLIT = re.compile(r'(?<=[.!?])\s+')
 
@@ -58,10 +94,18 @@ def extract_dates_and_summaries(infile, outfile):
 
         # Split into sentences
         sentences = SENT_SPLIT.split(sentence_text)
+        last_seen_year = get_publication_year(text) or datetime.now().year
         for sent in sentences:
             sent = sent.strip()
             if not sent:
                 continue
+
+            # Determine sentence-local year preference
+            sentence_year = last_seen_year
+            explicit_years_in_sentence = [int(y) for y in YEAR_RE.findall(sent)]
+            if explicit_years_in_sentence:
+                # Use the last explicit year mentioned in the sentence
+                sentence_year = int(re.findall(r"\b(\d{4})\b", sent)[-1])
 
             # Find dates in sentence
             date_matches = list(BROAD_DATE_RE.finditer(sent))
@@ -78,24 +122,44 @@ def extract_dates_and_summaries(infile, outfile):
                     except Exception:
                         continue
                 else:  # infer year
-                    parts = re.match(r"(?P<month>[A-Za-z]+)\.?\s+(?P<day>\d{1,2}(?:/\d{1,2})?)", date_str)
-                    if not parts:
+                    # Try both month-first and day-first
+                    md = MONTH_DAY_RE.match(date_str)
+                    dm = None if md else DAY_MONTH_RE.match(date_str)
+                    if not md and not dm:
                         continue
-                    month, day = parts.group("month"), parts.group("day")
 
-                    if "/" in day:  # handle ranges
+                    if md:
+                        month = md.group("month")
+                        day = md.group("day")
+                    else:
+                        month = dm.group("month")
+                        day = dm.group("day")
+
+                    # Remove ordinal suffixes from days
+                    def clean_day(d):
+                        return re.sub(r"(st|nd|rd|th)$", "", d)
+
+                    target_year = sentence_year or pub_year
+
+                    if "/" in day:  # handle day ranges like 3/4
                         for d in day.split("/"):
                             try:
-                                dt = parse(f"{month} {d}, {pub_year}")
+                                d_clean = clean_day(d)
+                                dt = parse(f"{month} {d_clean}, {target_year}")
                                 entries.append((dt.date(), sent))
                             except Exception:
                                 continue
                     else:
                         try:
-                            dt = parse(f"{month} {day}, {pub_year}")
+                            d_clean = clean_day(day)
+                            dt = parse(f"{month} {d_clean}, {target_year}")
                             entries.append((dt.date(), sent))
                         except Exception:
                             continue
+
+            # Update rolling last seen year if any explicit years were present
+            if explicit_years_in_sentence:
+                last_seen_year = sentence_year
 
     # Deduplicate by date
     deduped_entries = defaultdict(set)
