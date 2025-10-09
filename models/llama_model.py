@@ -50,7 +50,7 @@ def load_llama_model(model_name=LLAMA_MODEL_NAME, hf_token=HF_TOKEN):
 
     return model, tokenizer
 
-def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=512):
+def generate_summary(query, grouped_docs, model, tokenizer, max_summary_tokens=1024):
     summaries = {}
 
     for pub_date, contents in grouped_docs.items():
