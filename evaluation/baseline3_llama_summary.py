@@ -47,24 +47,40 @@ def extract_dates_with_full_mapping(input_file, output_file):
         for sent in sentences:
             final_date = None
 
-            # Regex full date
-            full_date_regex = re.compile(
+            # Regex full date (Month Day, Year) e.g., "April 22, 2012" or "Apr 22 2012"
+            full_date_monthfirst_regex = re.compile(
                 r'\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\.?\s*'
                 r'(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|'
                 r'Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
-                r'\s+\d{1,2}(?:\s*,)?\s+\d{4}\b',
+                r'\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,)?\s+\d{4}\b',
                 flags=re.IGNORECASE
             )
 
-            # Regex partial date
-            partial_date_regex = re.compile(
+            # Regex full date (Day Month Year) e.g., "22 April 2012" or "22nd Apr 2012"
+            full_date_dayfirst_regex = re.compile(
+                r'\b\d{1,2}(?:st|nd|rd|th)?\s+'
+                r'(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|'
+                r'Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{4}\b',
+                flags=re.IGNORECASE
+            )
+
+            # Regex partial date (Month Day) e.g., "April 22" or "Apr 22nd"
+            partial_date_monthfirst_regex = re.compile(
                 r'\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|'
-                r'Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}\b',
+                r'Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b',
+                flags=re.IGNORECASE
+            )
+
+            # Regex partial date (Day Month) e.g., "22 April" or "22nd Apr"
+            partial_date_dayfirst_regex = re.compile(
+                r'\b\d{1,2}(?:st|nd|rd|th)?\s+'
+                r'(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|'
+                r'Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b',
                 flags=re.IGNORECASE
             )
 
             # Try full date
-            match = full_date_regex.search(sent)
+            match = full_date_monthfirst_regex.search(sent) or full_date_dayfirst_regex.search(sent)
             if match:
                 try:
                     dt = parse(match.group(), fuzzy=True)
@@ -75,7 +91,7 @@ def extract_dates_with_full_mapping(input_file, output_file):
 
             else:
                 # Try partial
-                match = partial_date_regex.search(sent)
+                match = partial_date_monthfirst_regex.search(sent) or partial_date_dayfirst_regex.search(sent)
                 if match:
                     try:
                         dt = parse(f"{match.group()} {pub_date_obj.year}", fuzzy=True)
