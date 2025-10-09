@@ -11,4 +11,4 @@ PROCESSED_RESULTS_FILE = "processed_results.txt"
 SUMMARY_FILE = "timeline_summary.txt"
 CLEANED_SUMMARY_FILE = "cleaned_summary.txt"
 
-TOP_K_RETRIEVAL = 10
+TOP_K_RETRIEVAL = 5

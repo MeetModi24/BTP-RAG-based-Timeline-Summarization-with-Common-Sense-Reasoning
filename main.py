@@ -155,14 +155,14 @@ def main():
     print(f"Retrieving top documents for query: '{query}'")
     retrieved_docs = retrieve_documents(query, retriever, index, articles)
 
-    #--------extras for debugging 1--------
-    print(retrieved_docs)
-
     # Step 4: Process retrieved documents by date
     print("Processing retrieved documents...")
     grouped_results = process_retrieved_docs(retrieved_docs)
     write_processed_results_to_file(grouped_results, output_file=PROCESSED_RESULTS_FILE)
     print(f"Processed results saved to {PROCESSED_RESULTS_FILE}")
+
+    #--------extras for debugging 1--------
+    print(grouped_results)
 
     # Step 5: Convert grouped results to format for LLaMA
     grouped_dict = list_to_grouped_dict(grouped_results)
