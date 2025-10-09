@@ -155,6 +155,9 @@ def main():
     print(f"Retrieving top documents for query: '{query}'")
     retrieved_docs = retrieve_documents(query, retriever, index, articles)
 
+    #--------extras for debugging 1--------
+    print(retrieved_docs)
+
     # Step 4: Process retrieved documents by date
     print("Processing retrieved documents...")
     grouped_results = process_retrieved_docs(retrieved_docs)
