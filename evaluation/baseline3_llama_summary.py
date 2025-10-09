@@ -39,13 +39,18 @@ def extract_dates_with_full_mapping(input_file, output_file):
         except Exception:
             continue
 
-        last_date = None
         summary = ' '.join(lines[1:]).replace("Content:", "").strip()
         sentences = spacy_sent_tokenize(summary)
 
         mappings = []
+        # Grouping state for merging sentences that follow an explicitly dated sentence
+        in_group = False
+        group_date = None
+        group_sentences = []
+
         for sent in sentences:
             final_date = None
+            explicit_date_found = False
 
             # Regex full date (Month Day, Year) e.g., "April 22, 2012" or "Apr 22 2012"
             full_date_monthfirst_regex = re.compile(
@@ -85,9 +90,9 @@ def extract_dates_with_full_mapping(input_file, output_file):
                 try:
                     dt = parse(match.group(), fuzzy=True)
                     final_date = dt.strftime("%Y-%m-%d")
-                    last_date = final_date
+                    explicit_date_found = True
                 except Exception:
-                    final_date = last_date or pub_date_obj.strftime("%Y-%m-%d")
+                    final_date = None
 
             else:
                 # Try partial
@@ -96,14 +101,15 @@ def extract_dates_with_full_mapping(input_file, output_file):
                     try:
                         dt = parse(f"{match.group()} {pub_date_obj.year}", fuzzy=True)
                         final_date = dt.strftime("%Y-%m-%d")
-                        last_date = final_date
+                        explicit_date_found = True
                     except Exception:
-                        final_date = last_date or pub_date_obj.strftime("%Y-%m-%d")
+                        final_date = None
                 else:
                     # Try year
                     year_match = re.search(r'\b(\d{4})\b', sent)
                     if year_match:
                         final_date = f"{year_match.group(1)}-01-01"
+                        explicit_date_found = True
                     else:
                         # Try weekday
                         weekday_match = next((wd for wd in WEEKDAYS if re.search(r'\b' + wd + r'\b', sent)), None)
@@ -112,11 +118,28 @@ def extract_dates_with_full_mapping(input_file, output_file):
                             diff = (pub_date_obj.weekday() - idx) % 7
                             inferred = pub_date_obj - timedelta(days=diff)
                             final_date = inferred.strftime("%Y-%m-%d")
-                            last_date = final_date
-                        else:
-                            final_date = last_date or pub_date_obj.strftime("%Y-%m-%d")
+                            explicit_date_found = True
 
-            mappings.append((final_date, sent.strip()))
+            # Apply grouping/merging rules
+            if explicit_date_found and final_date:
+                # Flush previous group if any
+                if in_group and group_sentences:
+                    mappings.append((group_date, ' '.join(s.strip() for s in group_sentences)))
+                # Start a new group with this explicitly dated sentence
+                in_group = True
+                group_date = final_date
+                group_sentences = [sent.strip()]
+            else:
+                if in_group:
+                    # Continue the current group by appending this undated sentence
+                    group_sentences.append(sent.strip())
+                else:
+                    # Standalone sentence without explicit date: assign publication date, do NOT merge
+                    mappings.append((pub_date_obj.strftime("%Y-%m-%d"), sent.strip()))
+
+        # Flush any remaining open group at the end of the block
+        if in_group and group_sentences:
+            mappings.append((group_date, ' '.join(s.strip() for s in group_sentences)))
 
         # Build block output
         header = f"Publication Date: {pub_date_obj.strftime('%a %b %d , %Y')}"

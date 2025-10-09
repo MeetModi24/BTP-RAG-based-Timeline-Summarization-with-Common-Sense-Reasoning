@@ -204,7 +204,7 @@ def main():
     # Baseline 2: Regex-based
     # ================================
     print("\nRunning Baseline 2 (Regex-based)...")
-    b2_concat, b2_align = run_baseline2(CLEANED_SUMMARY_FILE, GROUNDTRUTH_FILE)
+    b2_concat, b2_align = run_baseline2(PROCESSED_RESULTS_FILE, GROUNDTRUTH_FILE)
     if b2_concat and b2_align:
         print("Baseline 2 ROUGE-1 (concat):", b2_concat)
         print("Baseline 2 ROUGE-1 (align):", b2_align)
