@@ -24,7 +24,7 @@ def list_to_grouped_dict(processed_results):
     return grouped
 
 
-def trim_summary_sentences(summary_text, max_sentences=30):
+def trim_summary_sentences(summary_text, max_sentences=20):
     """
     Limit a long summary to the first N sentences.
     """
