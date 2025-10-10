@@ -207,7 +207,7 @@ def main():
     parser.add_argument("--xlsx_file_column", type=str, default="file_name", help="Filename column name in the Excel file.")
     parser.add_argument("--xlsx_date_column", type=str, default="Date", help="Date column name in the Excel file (MM/DD/YYYY).")
     args = parser.parse_args()
-
+    
     print(f"Loading spaCy model '{args.model}'...")
     try:
         nlp = spacy.load(args.model)
