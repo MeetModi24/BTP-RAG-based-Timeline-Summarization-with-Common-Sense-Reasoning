@@ -204,8 +204,8 @@ def main():
     parser.add_argument("--date_from", type=str, default=None, help="Inclusive start date (e.g., 1930-03-12).")
     parser.add_argument("--date_to", type=str, default=None, help="Inclusive end date (e.g., 1930-04-06).")
     parser.add_argument("--letters_xlsx", type=str, default=None, help="Optional path to filtered_letters_sent_by_mg.xlsx.")
-    parser.add_argument("--xlsx_id_column", type=str, default="id", help="ID column name in the Excel file.")
-    parser.add_argument("--xlsx_date_column", type=str, default="date", help="Date column name in the Excel file.")
+    parser.add_argument("--xlsx_file_column", type=str, default="file_name", help="Filename column name in the Excel file.")
+    parser.add_argument("--xlsx_date_column", type=str, default="Date", help="Date column name in the Excel file (MM/DD/YYYY).")
     args = parser.parse_args()
 
     print(f"Loading spaCy model '{args.model}'...")
@@ -224,20 +224,21 @@ def main():
     date_from = parse(args.date_from).date() if args.date_from else None
     date_to = parse(args.date_to).date() if args.date_to else None
 
-    # --- Optionally load Excel id->date mapping ---
-    id_to_date = {}
+    # --- Optionally load Excel filename->date mapping ---
+    filename_to_date = {}
     if args.letters_xlsx:
         try:
             import pandas as pd
             df = pd.read_excel(args.letters_xlsx)
-            id_col = args.xlsx_id_column
+            id_col = args.xlsx_file_column
             date_col = args.xlsx_date_column
             if id_col in df.columns and date_col in df.columns:
                 tmp = df[[id_col, date_col]].copy()
-                tmp[id_col] = tmp[id_col].astype(str).str.extract(r"(\d+)")
-                tmp[date_col] = pd.to_datetime(tmp[date_col], errors='coerce')
+                tmp[id_col] = tmp[id_col].astype(str).str.strip().str.lower()
+                # Excel shown as month/day/year; parse explicitly
+                tmp[date_col] = pd.to_datetime(tmp[date_col], format="%m/%d/%Y", errors='coerce')
                 for _, row in tmp.dropna(subset=[id_col, date_col]).iterrows():
-                    id_to_date[str(row[id_col]).strip()] = row[date_col].date()
+                    filename_to_date[str(row[id_col]).strip()] = row[date_col].date()
             else:
                 print(f"Warning: Excel missing columns '{id_col}' or '{date_col}'. Skipping Excel mapping.")
         except Exception as e:
@@ -246,10 +247,11 @@ def main():
     # --- Filter files by date range (Excel preferred, else header) ---
     filtered_files = []
     for fpath in all_text_files:
-        pid, _, iso_dt = _parse_header_id_and_date_from_file(fpath)
+        _, _, iso_dt = _parse_header_id_and_date_from_file(fpath)
         file_date = None
-        if pid and pid in id_to_date:
-            file_date = id_to_date[pid]
+        base_name = os.path.basename(fpath).strip().lower()
+        if base_name in filename_to_date:
+            file_date = filename_to_date[base_name]
         elif iso_dt:
             try:
                 file_date = parse(iso_dt).date()
@@ -269,7 +271,7 @@ def main():
     # --- Debug info ---
     print("Total files in folder:", len(all_text_files))
     print("Date filter:", args.date_from, "to", args.date_to)
-    print("Using Excel mapping:", bool(id_to_date))
+    print("Using Excel mapping:", bool(filename_to_date))
     print("Total matching files:", len(filtered_files))
     print("Example matches:", [os.path.basename(f) for f in filtered_files[:10]])
 
