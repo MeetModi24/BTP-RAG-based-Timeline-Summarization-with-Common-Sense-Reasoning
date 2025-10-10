@@ -19,3 +19,5 @@ python-dateutil
 numpy
 sentencepiece
 tqdm
+pandas
+openpyxl
