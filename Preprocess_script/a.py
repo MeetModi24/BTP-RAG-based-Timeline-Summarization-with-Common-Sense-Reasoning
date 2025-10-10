@@ -13,44 +13,118 @@ from datetime import datetime
 from dateutil.parser import parse, ParserError
 from tqdm import tqdm
 
+def _clean_footer(text: str) -> str:
+    """
+    Remove common closings, signatures, and source/citation footers that appear
+    at the end of Gandhi letters (e.g., "Yours faithfully,", "M. K. GANDHI",
+    "From the original", "Mahatma, Vol. ...", newspaper citations with dates).
+    """
+    if not text:
+        return text
+
+    footer_line_patterns = [
+        r"^yours\s+sincerely\s*,?\s*$",
+        r"^yours\s+faithfully\s*,?\s*$",
+        r"^your\s+faithful\s+servant\s*,?\s*$",
+        r"^i\s+remain\s*,?\s*$",
+        r"^sir\s*,?\s*$",
+        r"^with\s+best\s+respects\s*,?\s*$",
+        r"^i\s+beg\s+to\s+remain\s*,?\s*$",
+        r"^m\.\s*k\.\s*gandhi\s*$",
+        r"^m\.\s*k\.\s*g\.?\s*$",
+        r"^m\.?\s*k\.?\s*gandhi\s*$",
+        r"^\[ps\.?\]\s*$",
+        r"^from\s+(the\s+)?original.*$",
+        r"^from\s+a\s+photostat.*$",
+        r"^mahatma\s*,?\s*vol\..*$",
+        # Newspaper/source + date like: The Natal Advertiser, 29-5-1893
+        r"^.*\b\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4}\b.*$",
+    ]
+
+    compiled = [re.compile(p, re.IGNORECASE) for p in footer_line_patterns]
+
+    lines = text.strip().split("\n")
+
+    # Walk upward removing trailing lines that match any footer pattern
+    end_index = len(lines)
+    while end_index > 0:
+        line = lines[end_index - 1].strip()
+        if not line:
+            end_index -= 1
+            continue
+        if any(c.match(line) for c in compiled):
+            end_index -= 1
+            continue
+        # Heuristic: extremely short courtesy lines like "I am, etc.," or "I am,"
+        if re.match(r"^(i\s+am\s*,?\s*etc\.?|i\s+am\s*,?)$", line, re.IGNORECASE):
+            end_index -= 1
+            continue
+        break
+
+    cleaned = "\n".join(lines[:end_index]).rstrip()
+    return cleaned
+
 def process_document(doc_id, text_content, nlp_model):
     """
     Processes a raw text string to extract metadata and parse sentences.
     """
     try:
-        # --- 1. Smarter Publication Time Extraction ---
+        # --- 1) Header parsing: id, title, publication date ---
+        lines = text_content.strip().split('\n')
+        header_lines = lines[:6]
+
+        # Parse first line: "<id>. <TITLE>"
+        parsed_id = None
+        title = None
+        if header_lines:
+            first_line = header_lines[0].strip()
+            m = re.match(r"^(\d+)\.\s*(.+)$", first_line)
+            if m:
+                parsed_id = m.group(1).strip()
+                title = m.group(2).strip()
+
+        if not parsed_id:
+            parsed_id = str(doc_id)
+        if not title:
+            title = f"Document_{parsed_id}"
+
+        # Robust date extraction from first 6 header lines
         pub_time_str = None
-        header_text = "\n".join(text_content.strip().split('\n')[:5])
+        default_date = datetime(1, 1, 1).replace(day=1)
 
-        date_regex = r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b"
-        date_match = re.search(date_regex, header_text)
-
-        if not date_match:
-            date_match = re.search(r"\[(.*?)\]", header_text)
-
-        if date_match:
+        def try_parse_date(candidate: str):
+            if not candidate:
+                return None
+            # Try exact bracket content like [December, 1888]
+            bracket = re.search(r"\[(.*?)\]", candidate)
+            if bracket:
+                inner = bracket.group(1)
+                try:
+                    return parse(inner, default=default_date, fuzzy=True)
+                except (ParserError, ValueError, TypeError):
+                    pass
+            # Try common explicit formats including weekday or plain
             try:
-                date_text = date_match.group(0) if date_match.re.pattern == date_regex else date_match.group(1)
-                default_date = datetime(1, 1, 1).replace(day=1)
-                dt_obj = parse(date_text, default=default_date)
+                return parse(candidate, default=default_date, fuzzy=True)
+            except (ParserError, ValueError, TypeError):
+                return None
+
+        for hline in header_lines:
+            dt_obj = try_parse_date(hline)
+            if dt_obj:
                 pub_time_str = dt_obj.isoformat() + "+00:00"
-            except (ValueError, TypeError, AttributeError):
-                pub_time_str = None
+                break
 
-        # --- Basic Metadata Extraction ---
-        title_match = re.search(r"^\d+\.\s*(.*)", text_content, re.MULTILINE)
-        title = title_match.group(1).strip() if title_match else f"Document_{doc_id}"
-
-        body_match = re.search(r"(DEAR SIR,|MY DEAR.*?)(.*?)(Yours sincerely,|Yours faithfully,)", text_content, re.DOTALL | re.IGNORECASE)
-        if body_match:
-            body_text = body_match.group(2).strip()
-        else:
-            lines = text_content.strip().split('\n')
-            body_text = "\n".join(lines[5:])
-        body_text = re.sub(r'\s+', ' ', body_text).strip()
-
+        # --- 2) Remaining text after header becomes body ---
+        body_text = "\n".join(lines[len(header_lines):]).strip()
+        if not body_text:
+            # Fallback: if header length misestimated, try removing only first line
+            body_text = "\n".join(lines[1:]).strip()
         if not body_text:
             return None
+
+        # --- 3) Remove trailing signatures/footers not useful for summarization ---
+        body_text = _clean_footer(body_text)
 
         # --- Process the full body with SpaCy ---
         doc = nlp_model(body_text)
@@ -97,9 +171,9 @@ def process_document(doc_id, text_content, nlp_model):
 
         final_json = {
             "title": title,
-            "text": text_content.strip(),
+            "text": body_text,
             "time": pub_time_str,
-            "id": str(doc_id),
+            "id": str(parsed_id),
             "sentences": processed_sentences
         }
         return final_json
