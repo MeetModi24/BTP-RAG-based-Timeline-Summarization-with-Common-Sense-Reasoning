@@ -269,6 +269,9 @@ def main():
             chosen_date = meta['date'] if meta else header_date
             chosen_id = meta['id'] if meta else None
 
+            if chosen_id is not None and pd.notna(chosen_id):
+                chosen_id = int(chosen_id)
+
             time_field = format_date_for_output(chosen_date) if chosen_date else None
 
             # Determine the body of the text based on the date line
