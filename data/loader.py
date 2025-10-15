@@ -6,7 +6,7 @@ from dateutil import parser
 from collections import defaultdict
 
 # will load all the articles from the jsonl file
-def load_articles(filename, limit=624):
+def load_articles(filename, limit=30000):
     articles = []
     with open(filename, "r", encoding="utf-8") as f:
         for i, line in enumerate(f):
