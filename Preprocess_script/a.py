@@ -1,5 +1,5 @@
 """
-Simple processor that: 
+Simple processor that:
 1) filters files by date range (prefers an Excel mapping file),
 2) for matching files writes a JSONL where each record contains only: title, text, time
 
@@ -46,9 +46,10 @@ def _try_parse_date_string(s: str):
 
 
 def extract_title_and_header_date(full_text: str):
-    """Given complete file content, return (title_str, date_obj_or_None).
+    """Given complete file content, return (title_str, date_obj_or_None, date_line_index).
     Title extraction: same as before, first line like "3. LETTER TO ..." -> title part after number.
     Date extraction: look through first 6 lines for any parseable date.
+    Returns the date and its 0-based line index. Index is -1 if no date found.
     """
     lines = full_text.splitlines()
     header_lines = lines[:6]
@@ -69,16 +70,18 @@ def extract_title_and_header_date(full_text: str):
                     break
 
     parsed_date = None
-    for l in header_lines:
+    date_line_index = -1
+    for i, l in enumerate(header_lines):
         d = _try_parse_date_string(l)
         if d:
             parsed_date = d
+            date_line_index = i
             break
 
     if not parsed_title:
         parsed_title = "Untitled"
 
-    return parsed_title, parsed_date
+    return parsed_title, parsed_date, date_line_index
 
 
 def load_excel_mapping(xlsx_path: str, id_col: str = "file_name", date_col: str = "Date"):
@@ -222,7 +225,7 @@ def main():
             except Exception as e:
                 print(f"Failed to read {p}: {e}")
                 continue
-            _, header_date = extract_title_and_header_date(content)
+            _, header_date, _ = extract_title_and_header_date(content)
             if header_date is None:
                 continue
             if date_from and header_date < date_from:
@@ -247,7 +250,8 @@ def main():
                 print(f"Skipping {fpath} due to read error: {e}")
                 continue
 
-            title, header_date = extract_title_and_header_date(content)
+            title, header_date, date_line_index = extract_title_and_header_date(content)
+            
             # Prefer date from excel mapping if present (lookup by basename)
             bn = os.path.basename(fpath).lower()
             name_no_ext = os.path.splitext(bn)[0]
@@ -261,9 +265,21 @@ def main():
 
             time_field = format_date_for_output(chosen_date) if chosen_date else None
 
+            # NEW: Determine the body of the text based on the date line
+            lines = content.splitlines()
+            start_line_index = 0
+            if date_line_index != -1:
+                # If date was found, body starts on the next line
+                start_line_index = date_line_index + 1
+            else:
+                # Fallback: if no date in first 6 lines, assume header is 6 lines
+                start_line_index = 6
+            
+            body_content = "\n".join(lines[start_line_index:])
+
             out_obj = {
                 "title": title,
-                "text": content,
+                "text": body_content, # Use the extracted body content
                 "time": time_field
             }
             out.write(json.dumps(out_obj, ensure_ascii=False) + "\n")
