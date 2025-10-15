@@ -75,7 +75,7 @@ def extract_title_and_header_date(full_text: str):
         d = _try_parse_date_string(l)
         if d:
             parsed_date = d
-            date_line_index = i
+            date_line_index = i+1
             break
 
     if not parsed_title:
