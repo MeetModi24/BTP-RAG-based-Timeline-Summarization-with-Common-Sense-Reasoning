@@ -1,11 +1,11 @@
 """
 Simple processor that:
 1) filters files by date range (prefers an Excel mapping file),
-2) for matching files writes a JSONL where each record contains only: title, text, time
+2) for matching files writes a JSONL where each record contains: id, title, text, time
 
 Assumptions / behavior:
 - By default the Excel mapping is expected at `Preprocess_script/filtered_letters_sent_by_mg.xlsx`.
-- Excel must contain a filename column (default: `file_name`) and a Date column (default: `Date`) in MM/DD/YYYY form.
+- Excel must contain a filename column (default: `file_name`), a Date column (default: `Date`), and an ID column (default: `id`).
 - If Excel is provided the script selects filenames whose Date lies in the inclusive CLI range -- those filenames are then searched for (case-insensitive) inside the input directory.
 - If Excel is not provided or no matches are found the script will fall back to parsing the header of each .txt file and use any date found in the first 6 lines.
 - Output `time` format: `YYYY-MM-DDT00:00:00+00:00` (UTC midnight)
@@ -75,7 +75,7 @@ def extract_title_and_header_date(full_text: str):
         d = _try_parse_date_string(l)
         if d:
             parsed_date = d
-            date_line_index = i+1
+            date_line_index = i # Corrected line index
             break
 
     if not parsed_title:
@@ -84,10 +84,8 @@ def extract_title_and_header_date(full_text: str):
     return parsed_title, parsed_date, date_line_index
 
 
-def load_excel_mapping(xlsx_path: str, id_col: str = "file_name", date_col: str = "Date"):
-    """Load Excel mapping returning dict filename(lower)->date (datetime.date)
-    If pandas is not available or file cannot be read, returns empty dict.
-    """
+def load_excel_mapping(xlsx_path: str, id_col: str = "file_name", date_col: str = "Date", record_id_col: str = "id"):
+    """Load Excel mapping returning dict filename(lower)->{'date': date_obj, 'id': id_val}"""
     mapping = {}
     if not xlsx_path or not os.path.exists(xlsx_path):
         return mapping
@@ -96,10 +94,12 @@ def load_excel_mapping(xlsx_path: str, id_col: str = "file_name", date_col: str 
         return mapping
     try:
         df = pd.read_excel(xlsx_path)
-        if id_col not in df.columns or date_col not in df.columns:
-            print(f"Warning: Excel missing columns '{id_col}' or '{date_col}'. Skipping Excel mapping.")
+        required_cols = [id_col, date_col, record_id_col]
+        if not all(col in df.columns for col in required_cols):
+            print(f"Warning: Excel missing one or more required columns: {required_cols}. Skipping Excel mapping.")
             return mapping
-        tmp = df[[id_col, date_col]].copy()
+
+        tmp = df[required_cols].copy()
         # Normalize filename column to str and lower
         tmp[id_col] = tmp[id_col].astype(str).str.strip().str.lower()
         # Try parsing date column. The sheet often uses MM/DD/YYYY; try that first then fallback
@@ -107,10 +107,12 @@ def load_excel_mapping(xlsx_path: str, id_col: str = "file_name", date_col: str 
             tmp[date_col] = pd.to_datetime(tmp[date_col], format="%m/%d/%Y", errors='coerce')
         except Exception:
             tmp[date_col] = pd.to_datetime(tmp[date_col], errors='coerce')
+
         for _, row in tmp.dropna(subset=[id_col, date_col]).iterrows():
             fname = str(row[id_col]).strip().lower()
             dt = row[date_col].date()
-            mapping[fname] = dt
+            record_id = row[record_id_col]
+            mapping[fname] = {'date': dt, 'id': record_id}
         return mapping
     except Exception as e:
         print(f"Warning: failed to read Excel '{xlsx_path}': {e}. Proceeding without it.")
@@ -141,7 +143,6 @@ def find_files_for_filenames(base_dir: str, filenames: set):
             found[fname] = basename_map[fname]
             continue
         # try adding .txt
-        key = fname
         if not fname.endswith('.txt') and (fname + '.txt') in basename_map:
             found[fname] = basename_map[fname + '.txt']
             continue
@@ -170,9 +171,9 @@ def main():
     parser.add_argument("--output_file", type=str, required=True, help="Output JSONL file path")
     parser.add_argument("--letters_xlsx", type=str, default="Preprocess_script/filtered_letters_sent_by_mg.xlsx",
                         help="Path to Excel mapping file (optional). Default: Preprocess_script/filtered_letters_sent_by_mg.xlsx")
-    parser.add_argument("--csv_id_column", type=str, default="id", help="Column name in CSV for the record ID")
     parser.add_argument("--xlsx_file_column", type=str, default="file_name", help="Column name in Excel for filename")
     parser.add_argument("--xlsx_date_column", type=str, default="Date", help="Column name in Excel for date (MM/DD/YYYY)")
+    parser.add_argument("--xlsx_id_column", type=str, default="id", help="Column name in Excel for the record ID")
     parser.add_argument("--date_from", type=str, default=None, help="Inclusive start date (YYYY-MM-DD)")
     parser.add_argument("--date_to", type=str, default=None, help="Inclusive end date (YYYY-MM-DD)")
     args = parser.parse_args()
@@ -189,18 +190,24 @@ def main():
         print(f"Error parsing date_from/date_to: {e}")
         return
 
-    # Load Excel mapping (filename -> date)
-    filename_to_date = {}
+    # Load Excel mapping (filename -> {'date': date, 'id': id})
+    file_metadata = {}
     if args.letters_xlsx and os.path.exists(args.letters_xlsx):
-        filename_to_date = load_excel_mapping(args.letters_xlsx, id_col=args.xlsx_file_column, date_col=args.xlsx_date_column)
+        file_metadata = load_excel_mapping(
+            args.letters_xlsx,
+            id_col=args.xlsx_file_column,
+            date_col=args.xlsx_date_column,
+            record_id_col=args.xlsx_id_column
+        )
     else:
         if args.letters_xlsx:
             print(f"Excel mapping not found at '{args.letters_xlsx}'. Will fall back to header parsing.")
 
     # If we have an excel mapping, select filenames within the date range
     selected_filenames = set()
-    if filename_to_date:
-        for fname, dt in filename_to_date.items():
+    if file_metadata:
+        for fname, meta in file_metadata.items():
+            dt = meta['date']
             if date_from and dt < date_from:
                 continue
             if date_to and dt > date_to:
@@ -252,21 +259,19 @@ def main():
                 continue
 
             title, header_date, date_line_index = extract_title_and_header_date(content)
-            
-            # Prefer date from excel mapping if present (lookup by basename)
+
             bn = os.path.basename(fpath).lower()
             name_no_ext = os.path.splitext(bn)[0]
-            chosen_date = None
-            if filename_to_date.get(bn):
-                chosen_date = filename_to_date.get(bn)
-            elif filename_to_date.get(name_no_ext):
-                chosen_date = filename_to_date.get(name_no_ext)
-            else:
-                chosen_date = header_date
+
+            # Get metadata from the Excel mapping if present
+            meta = file_metadata.get(bn) or file_metadata.get(name_no_ext)
+
+            chosen_date = meta['date'] if meta else header_date
+            chosen_id = meta['id'] if meta else None
 
             time_field = format_date_for_output(chosen_date) if chosen_date else None
 
-            # NEW: Determine the body of the text based on the date line
+            # Determine the body of the text based on the date line
             lines = content.splitlines()
             start_line_index = 0
             if date_line_index != -1:
@@ -279,8 +284,9 @@ def main():
             body_content = "\n".join(lines[start_line_index:])
 
             out_obj = {
+                "id": chosen_id,
                 "title": title,
-                "text": body_content, # Use the extracted body content
+                "text": body_content,
                 "time": time_field
             }
             out.write(json.dumps(out_obj, ensure_ascii=False) + "\n")
