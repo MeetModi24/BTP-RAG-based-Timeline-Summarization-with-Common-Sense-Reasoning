@@ -170,6 +170,7 @@ def main():
     parser.add_argument("--output_file", type=str, required=True, help="Output JSONL file path")
     parser.add_argument("--letters_xlsx", type=str, default="Preprocess_script/filtered_letters_sent_by_mg.xlsx",
                         help="Path to Excel mapping file (optional). Default: Preprocess_script/filtered_letters_sent_by_mg.xlsx")
+    parser.add_argument("--csv_id_column", type=str, default="id", help="Column name in CSV for the record ID")
     parser.add_argument("--xlsx_file_column", type=str, default="file_name", help="Column name in Excel for filename")
     parser.add_argument("--xlsx_date_column", type=str, default="Date", help="Column name in Excel for date (MM/DD/YYYY)")
     parser.add_argument("--date_from", type=str, default=None, help="Inclusive start date (YYYY-MM-DD)")
